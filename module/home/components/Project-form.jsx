@@ -13,6 +13,7 @@ import { Form, FormField } from "@/components/ui/form";
 import { X } from "lucide-react";
 import { PROJECT_TEMPLATES } from "@/constant";
 import { useForm } from "react-hook-form";
+import  OnInvoke  from "../actions";
 
 const formSchema= z.object({
     content: z.string()
@@ -43,10 +44,31 @@ export default function ProjectForm(){
         } catch (error) {
             
         }
-    }
+    };
 
     return (
         <div className="space-y-8">
+           <form
+                action={OnInvoke}
+                className="
+                    space-y-6 rounded-xl border 
+                    bg-white text-gray-900 border-gray-200 
+                    p-8 shadow-lg
+                    dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700
+                "
+                >
+                <Button
+                    type="submit"
+                    className="
+                    w-full px-8 py-6 text-lg font-semibold rounded-lg
+                    transition-all duration-200
+                    bg-black text-white hover:scale-105 hover:bg-gray-800
+                    dark:bg-white dark:text-black dark:hover:bg-gray-200
+                    "
+                >
+                    🚀 Invoke
+                </Button>
+            </form>
             {/* Template Grid  */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {
