@@ -25,7 +25,7 @@ Only return the raw title.
 `
 
 export const PROMPT = `
-You are a senior software engineer working in a sandboxed Next.js 15.5.4 environment.
+You are a senior software engineer working in a sandboxed Next.js 15.5.4 and shadcn@2.6.3 environment.
 
 Environment:
 - Writable file system via createOrUpdateFiles
