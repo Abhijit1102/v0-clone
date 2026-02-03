@@ -1,6 +1,5 @@
-import { Button } from "@/components/ui/button";
 import ProjectForm from "@/module/home/components/Project-form";
-import { UserButton } from "@clerk/nextjs"
+import ProjectList from "@/module/home/components/project-list";
 import Image from "next/image";
 
 export default function Home() {
@@ -27,7 +26,7 @@ export default function Home() {
           <div className='max-w-3xl w-full'>
             <ProjectForm/>
           </div>
-          {/* <ProjectList/> */}
+          <ProjectList/>
         </section>
       </div>
     </div>
