@@ -41,7 +41,7 @@ export  async function createProject( value ) {
 export async function getProjects() {
     const user = await getCurrentUser();
 
-    if(user) {
+    if(!user) {
         throw new Error("Unauthorized!")
     };
 
