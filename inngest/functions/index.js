@@ -9,7 +9,7 @@ import {
   createNetwork,
 } from "@inngest/agent-kit";
 
-import { PROMPT } from "@/prompt";
+import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from "@/prompt";
 import db from "@/lib/db";
 import { MessageRole, MessageType } from "@prisma/client";
 
@@ -219,6 +219,56 @@ export const codeAgentFunction = inngest.createFunction(
       });
     }
 
+    const fragmentTitleGenerator = createAgent({
+      name: "fragement-title-generator",
+      description: "Generate the title for the fragment",
+      system:FRAGMENT_TITLE_PROMPT,
+      model: openai({
+        model: "gpt-4o-mini",
+        apiKey: process.env.OPENAI_API_KEY,
+      })
+    });
+
+    const responseGenerator = createAgent({
+      name: "response-generator",
+      description: "Generate the response for the fragment",
+      system:RESPONSE_PROMPT,
+      model: openai({
+        model: "gpt-4o-mini",
+        apiKey: process.env.OPENAI_API_KEY,
+      })
+    });
+
+    const {output:fragmentTitleOutput} = await fragmentTitleGenerator.run(result.state.data.summary)
+
+    const {output:responseOutput} = await responseGenerator.run(
+      result.state.data.summary
+    );
+
+    const generateFragmentTitle = () => {
+      if(fragmentTitleOutput[0].type !== "text"){
+        return "Untitled"
+      }
+
+      if(Array.isArray(fragmentTitleOutput[0].content)){
+        return fragmentTitleOutput[0].content.map((c) => c).join("");
+      } else {
+        return fragmentTitleOutput[0].content
+      }
+    };
+
+     const generateResponse = ()=>{
+       if (responseOutput[0].type !== "text") {
+        return "Here you go";
+      }
+
+      if (Array.isArray(responseOutput[0].content)) {
+        return responseOutput[0].content.map((c) => c).join("");
+      } else {
+        return responseOutput[0].content;
+      }
+    }
+
     const hasSummary = Boolean(result.state.data.summary);
     const hasFiles = files && Object.keys(files).length > 0;
     const isError = !hasSummary && !hasFiles;
@@ -253,12 +303,12 @@ export const codeAgentFunction = inngest.createFunction(
       return db.message.create({
         data: {
           projectId: event.data.projectId,
-          content: result.state.data.summary || "Project generated",
+          content: generateResponse() || "Project generated",
           role: MessageRole.ASSISTANT,
           type: MessageType.RESULT,
           fragments: {
             create: {
-              title: "Generated Project",
+              title: generateFragmentTitle(),
               sandboxUrl,
               files: files,
             },
