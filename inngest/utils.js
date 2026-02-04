@@ -1,49 +1,50 @@
 
-export function lastAssistantTextMessageContent(result){
-    const lastAssistantTextMessageIndex = result.output.findLastIndex(
-        (message) => message.role === "assistant"
-    )
+// export function lastAssistantTextMessageContent(result){
+//     const lastAssistantTextMessageIndex = result.output.findLastIndex(
+//         (message) => message.role === "assistant"
+//     )
 
-    const message = result.output[lastAssistantTextMessageIndex] 
+//     const message = result.output[lastAssistantTextMessageIndex] 
 
 
-    return message?.content ? typeof message.content === "string" ? message.content : message.content.map((c)=>c.text).join("") : undefined
-}
+//     return message?.content ? typeof message.content === "string" ? message.content : message.content.map((c)=>c.text).join("") : undefined
+// }
 
-// export function lastAssistantTextMessageContent(result) {
-//   if (!result) return undefined;
+export function lastAssistantTextMessageContent(result) {
+  if (!result) return undefined;
 
-//   // ✅ Case 1: Raw OpenAI response (your current case)
-//   if (Array.isArray(result.choices)) {
-//     return result.choices[0]?.message?.content;
-//   }
+  // ✅ Case 1: Raw OpenAI response (your current case)
+  if (Array.isArray(result.choices)) {
+    return result.choices[0]?.message?.content;
+  }
 
-//   // ✅ Case 2: Agent Kit output (fallback)
-//   if (Array.isArray(result.output)) {
-//     const index = result.output.findLastIndex(
-//       (m) => m?.role === "assistant"
-//     );
+  // ✅ Case 2: Agent Kit output (fallback)
+  if (Array.isArray(result.output)) {
+    const index = result.output.findLastIndex(
+      (m) => m?.role === "assistant"
+    );
 
-//     if (index === -1) return undefined;
+    if (index === -1) return undefined;
 
-//     const message = result.output[index];
+    const message = result.output[index];
 
-//     if (typeof message.content === "string") return message.content;
+    if (typeof message.content === "string") return message.content;
 
-//     if (Array.isArray(message.content)) {
-//       return message.content.map((c) => c?.text ?? "").join("");
-//     }
-//   }
+    if (Array.isArray(message.content)) {
+      return message.content.map((c) => c?.text ?? "").join("");
+    }
+  }
 
-//   return undefined;
-// };
+  return undefined;
+};
 
 export function normalizeDirectives({ path, content }) {
   let code = content
     .replace(/\\n/g, "\n")
-    .replace(/\\"/g, `"`);
+    .replace(/\\"/g, `"`)
+    .replace(/\r\n/g, "\n");
 
-  // 🚨 FIX: Convert CSS @import to JS import in TS/TSX files
+  // Fix CSS @import inside TS/TSX
   if (/\.(ts|tsx)$/.test(path)) {
     code = code.replace(
       /^\s*@import\s+["'](.+?)["'];?/gm,
@@ -51,10 +52,12 @@ export function normalizeDirectives({ path, content }) {
     );
   }
 
-  // Normalize directives
+  // 🔥 STEP 1: Normalize ALL directive variants (quoted + unquoted)
   code = code
-    .replace(/^["']use client["'];?/m, `"use client";`)
-    .replace(/^["']use server["'];?/m, `"use server";`);
+    .replace(/^\s*use client;?/gm, `"use client";`)
+    .replace(/^\s*use server;?/gm, `"use server";`)
+    .replace(/^["']use client["'];?/gm, `"use client";`)
+    .replace(/^["']use server["'];?/gm, `"use server";`);
 
   const isTSX = path.endsWith(".tsx");
   const isForbidden = /layout\.tsx$|route\.ts$|middleware\.ts$/.test(path);
@@ -64,9 +67,10 @@ export function normalizeDirectives({ path, content }) {
 
   const hasServer = /^\s*["']use server["'];/.test(code);
 
-  // Remove ALL existing directives
+  // 🔥 STEP 2: REMOVE ALL directives
   code = code.replace(/^\s*["']use (client|server)["'];\s*/gm, "");
 
+  // 🔥 STEP 3: Re-inject exactly one valid directive
   if (usesHooks && isTSX && !isForbidden) {
     return `"use client";\n\n${code}`;
   }
@@ -77,4 +81,5 @@ export function normalizeDirectives({ path, content }) {
 
   return code;
 }
+
 
