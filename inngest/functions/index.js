@@ -229,7 +229,7 @@ export const codeAgentFunction = inngest.createFunction(
       })
     });
 
-    const responseGenerator = createAgent({
+    const x = createAgent({
       name: "response-generator",
       description: "Generate the response for the fragment",
       system:RESPONSE_PROMPT,
