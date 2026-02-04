@@ -7,6 +7,7 @@ import {
   createAgent,
   createTool,
   createNetwork,
+  createState,
 } from "@inngest/agent-kit";
 
 import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from "@/prompt";
@@ -22,12 +23,100 @@ export const codeAgentFunction = inngest.createFunction(
   { id: "code-agent" },
   { event: "code-agent/run" },
   async ({ event, step }) => {
-    const sandboxId = await step.run("create-sandbox", async () => {
+    // ✅ FIX: Get or create sandbox - reuse existing one if available
+    const sandboxId = await step.run("get-or-create-sandbox", async () => {
+  // 1️⃣ Try to find an existing sandbox URL from last RESULT fragment
+      const project = await db.project.findUnique({
+        where: { id: event.data.projectId },
+        select: {
+          messages: {
+            where: {
+              type: MessageType.RESULT,
+              fragments: { isNot: null },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              fragments: {
+                select: { sandboxUrl: true },
+              },
+            },
+          },
+        },
+      });
+
+      const existingSandboxUrl = project?.messages?.[0]?.fragments?.sandboxUrl;
+
+      console.log("existingSandboxUrl : ", existingSandboxUrl);
+
+      // 2️⃣ If sandbox exists → try to reconnect
+      if (existingSandboxUrl) {
+      try {
+        const hostname = new URL(existingSandboxUrl).hostname;
+        const withoutDomain = hostname.replace(".e2b.app", "");
+        const [, extractedSandboxId] = withoutDomain.split("-", 2);
+
+        if (!extractedSandboxId) {
+          throw new Error("Invalid sandbox URL format");
+        }
+
+        console.log(`♻️ Attempting to reuse sandbox: ${extractedSandboxId}`);
+
+        await Sandbox.connect(extractedSandboxId);
+
+        console.log(`✅ Successfully reconnected to sandbox: ${extractedSandboxId}`);
+        return extractedSandboxId;
+
+      } catch (err) {
+        console.log("⚠️ Failed to reconnect, creating new sandbox:", err.message);
+      }
+    }
+
+
+      // 3️⃣ Create a new sandbox
+      console.log("🆕 Creating new sandbox");
+      
       const sandbox = await Sandbox.create("v0-clone-build-v1", {
         allowInternetAccess: true,
-        timeoutMs: 30 * 60 * 1000,
+        timeoutMs: 30 * 60 * 1000, // 30 minutes
       });
+
+      console.log(`✅ New sandbox created: ${sandbox.sandboxId}`);
+      
       return sandbox.sandboxId;
+    });
+
+
+    // ✅ Get previous messages and return them from the step
+    const previousMessages = await step.run("get-previous-messages", async() => {
+      const formattedMessages = [];
+
+      const messages = await db.message.findMany({
+        where:{
+          projectId: event.data.projectId
+        },
+        orderBy:{
+          createdAt: "asc"
+        }
+      });
+
+      for(const message of messages){
+        formattedMessages.push({
+          type:"text",
+          role:message.role === "ASSISTANT" ? "assistant" : "user",
+          content: message.content
+        })
+      };
+
+      return formattedMessages;
+    });
+
+    // ✅ Now create state AFTER getting previousMessages
+    const state = createState({
+      summary:"",
+      files:{},
+    }, {
+      messages: previousMessages
     });
 
     const agent = createAgent({
@@ -162,7 +251,7 @@ export const codeAgentFunction = inngest.createFunction(
       },
     });
 
-    const result = await network.run(event.data.value);
+    const result = await network.run(event.data.value, {state});
 
     // ✅ FALLBACK: Extract files from sandbox if agent didn't capture them
     let files = result.state.data.files || {};
@@ -220,7 +309,7 @@ export const codeAgentFunction = inngest.createFunction(
     }
 
     const fragmentTitleGenerator = createAgent({
-      name: "fragement-title-generator",
+      name: "fragment-title-generator",
       description: "Generate the title for the fragment",
       system:FRAGMENT_TITLE_PROMPT,
       model: openai({
@@ -229,7 +318,7 @@ export const codeAgentFunction = inngest.createFunction(
       })
     });
 
-    const x = createAgent({
+    const responseGenerator = createAgent({
       name: "response-generator",
       description: "Generate the response for the fragment",
       system:RESPONSE_PROMPT,
