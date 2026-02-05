@@ -370,7 +370,7 @@ export const codeAgentFunction = inngest.createFunction(
       description: "Generate the response for the fragment",
       system:RESPONSE_PROMPT,
       model: openai({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         apiKey: process.env.OPENAI_API_KEY,
       })
     });
