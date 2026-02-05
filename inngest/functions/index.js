@@ -124,61 +124,108 @@ export const codeAgentFunction = inngest.createFunction(
       description: "Expert coding agent that creates files using tools",
       system: PROMPT,
       model: openai({
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         apiKey: process.env.OPENAI_API_KEY,
       }),
 
       tools: [
+        // 1. Terminal
         createTool({
           name: "terminal",
-          description: "Run terminal commands",
+          description: "Use the terminal to run commands",
           parameters: z.object({
             command: z.string(),
           }),
           handler: async ({ command }, { step }) => {
-            return step.run("terminal", async () => {
+            return await step?.run("terminal", async () => {
+              const buffers = { stdout: "", stderr: "" };
+
               try {
                 const sandbox = await Sandbox.connect(sandboxId);
-                const result = await sandbox.commands.run(command);
-                return result.stdout;
-              } catch (err) {
-                return String(err);
-              }
-            });
-          },
-        }),
 
-        createTool({
-          name: "createOrUpdateFiles",
-          description: "Create or update sandbox files. YOU MUST USE THIS TOOL to create all files.",
-          parameters: z.object({
-            files: z.array(
-              z.object({
-                path: z.string(),
-                content: z.string(),
-              })
-            ),
-          }),
-          handler: async ({ files }, { step }) => {
-            return step.run("createOrUpdateFiles", async () => {
-              const sandbox = await Sandbox.connect(sandboxId);
-              const writtenFiles = {};
-
-              for (const file of files) {
-                const normalized = normalizeDirectives({
-                  path: file.path,
-                  content: file.content,
+                const result = await sandbox.commands.run(command, {
+                  onStdout: (data) => { buffers.stdout += data; },
+                  onStderr: (data) => { buffers.stderr += data; },
                 });
 
-                await sandbox.files.write(file.path, normalized);
-                writtenFiles[file.path] = normalized;
+                // ✅ Return both stdout and stderr so agent can debug
+                return {
+                  success: true,
+                  stdout: result.stdout,
+                  stderr: buffers.stderr,
+                  exitCode: result.exitCode,
+                };
+              } catch (error) {
+                console.log(`Command failed: ${error} \n stdout: ${buffers.stdout}\n stderr: ${buffers.stderr}`);
+                
+                // ✅ Return structured error for agent debugging
+                return {
+                  success: false,
+                  error: error.message,
+                  stdout: buffers.stdout,
+                  stderr: buffers.stderr,
+                  command: command,
+                };
               }
-
-              return writtenFiles;
             });
           },
-        }),
+        }), 
 
+        createTool({
+            name: "createOrUpdateFiles",
+            description: "Create or update sandbox files. YOU MUST USE THIS TOOL to create all files.",
+            parameters: z.object({
+              files: z.array(
+                z.object({
+                  path: z.string(),
+                  content: z.string(),
+                })
+              ),
+            }),
+            handler: async ({ files }, { step, network }) => {
+              const result = await step.run("createOrUpdateFiles", async () => {
+                try {
+                  const sandbox = await Sandbox.connect(sandboxId);
+
+                  const updatedFiles =
+                    (network?.state?.data?.files) || {};
+
+                  for (const file of files) {
+                    const normalized = normalizeDirectives({
+                      path: file.path,
+                      content: file.content,
+                    });
+
+                    await sandbox.files.write(file.path, normalized);
+                    updatedFiles[file.path] = normalized;
+                  }
+
+                  return updatedFiles;
+                } catch (error) {
+                  console.error("❌ createOrUpdateFiles failed:", error);
+                  // ✅ Return error details so agent can see and fix
+                  return {
+                    error: true,
+                    message: `Failed to create/update files: ${error.message}`,
+                    stack: error.stack,
+                  };
+                }
+              });
+
+              // Update network state only on success
+              if (
+                result &&
+                !result.error &&
+                typeof result === "object" &&
+                network?.state?.data
+              ) {
+                network.state.data.files = result;
+              }
+
+              return result;
+            },
+          }),  
+            
         createTool({
           name: "readFiles",
           description: "Read files from sandbox",
@@ -362,19 +409,62 @@ export const codeAgentFunction = inngest.createFunction(
     const hasFiles = files && Object.keys(files).length > 0;
     const isError = !hasSummary && !hasFiles;
 
+    // Start the dev server if not already running
+    await step.run("start-dev-server", async () => {
+      const sandbox = await Sandbox.connect(sandboxId);
+      
+      try {
+        console.log("🔍 Checking if dev server is running...");
+        
+        // Check if Next.js process is running
+        const checkProcess = await sandbox.commands.run(
+          'pgrep -f "next dev" || echo "not_running"'
+        );
+        
+        if (checkProcess.stdout.includes("not_running")) {
+          console.log("🚀 Starting Next.js dev server...");
+          
+          // Kill any stuck processes on port 3000
+          await sandbox.commands.run('lsof -ti:3000 | xargs kill -9 2>/dev/null || true');
+          
+          // ✅ Start server using nohup & (works in E2B)
+          await sandbox.commands.run(
+            'nohup npm run dev > /tmp/next.log 2>&1 &'
+          );
+          
+          console.log("⏳ Waiting 15s for server startup...");
+          await new Promise(r => setTimeout(r, 15000)); // 15s warmup
+        } else {
+          console.log("✅ Dev server already running");
+        }
+      } catch (err) {
+        console.error("⚠️ Server check failed:", err.message);
+        // Fallback: try to start anyway
+        try {
+          await sandbox.commands.run('lsof -ti:3000 | xargs kill -9 2>/dev/null || true');
+          await sandbox.commands.run('nohup npm run dev > /tmp/next.log 2>&1 &');
+          await new Promise(r => setTimeout(r, 15000));
+        } catch (e) {
+          console.error("❌ Failed to start server:", e);
+        }
+      }
+    });
+
     const sandboxUrl = await step.run("get-sandbox-url", async () => {
       const sandbox = await Sandbox.connect(sandboxId);
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 10; i++) { // Increase retries
         try {
           const host = sandbox.getHost(3000);
+          console.log(`✅ Got sandbox URL: http://${host}`);
           return `http://${host}`;
-        } catch {
-          await new Promise((r) => setTimeout(r, 2000));
+        } catch (err) {
+          console.log(`⏳ Retry ${i + 1}/10 - waiting for port 3000...`);
+          await new Promise((r) => setTimeout(r, 3000)); // 3s between retries
         }
       }
 
-      throw new Error("Sandbox server did not start");
+      throw new Error("Sandbox server did not start on port 3000");
     });
 
     await step.run("save-result", async () => {

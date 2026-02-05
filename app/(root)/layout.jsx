@@ -1,8 +1,6 @@
-import { onBoardUser } from "@/module/auth/actions";
 import Navbar from "@/module/home/components/Navbar";
 
 export default async function Layout({children}){
-    await onBoardUser();
     return (
         <main className="flex flex-col min-h-screen relative overflow-x-hidden">
             <Navbar />
