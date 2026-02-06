@@ -8,19 +8,12 @@ const FragmentWeb = ({ data }) => {
   const [fragmentKey, setFragmentKey] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  const proxiedUrl = useMemo(() => {
-    if (!data?.sandboxUrl) return "";
-    return `/api/proxy?url=${(data.sandboxUrl)}`;
-  }, [data?.sandboxUrl]);
-  
-  console.log("ProxiedUrl : ", proxiedUrl);
-
   const onRefresh = () => {
     setFragmentKey((prev) => prev + 1);
   };
 
   const onCopy = () => {
-    navigator.clipboard.writeText(data.sandboxUrl);
+    navigator.clipboard.writeText(toHttps(data.sandboxUrl));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -65,7 +58,7 @@ const FragmentWeb = ({ data }) => {
           key={fragmentKey}
           className="h-full w-full"
           loading="lazy"
-          src={proxiedUrl}
+          src={toHttps(data.sandboxUrl)}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         />
       )}
