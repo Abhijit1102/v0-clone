@@ -65,7 +65,7 @@ const FragmentWeb = ({ data }) => {
           key={fragmentKey}
           className="h-full w-full"
           loading="lazy"
-          src={toHttps(data.sandboxUrl)}
+          src={proxiedUrl}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         />
       )}
