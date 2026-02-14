@@ -108,7 +108,7 @@ Every time the agent successfully generates code, a **Fragment** is attached to 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/v0-clone.git
+https://github.com/Abhijit1102/v0-clone.git
 cd v0-clone
 ```
 
